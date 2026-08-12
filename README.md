@@ -68,9 +68,16 @@ Three details are load-bearing:
   and rounding that straight up would charge a spurious extra cent. The value is
   settled below the cent first, which discards the artifact and keeps any real
   fraction. There is a spec for exactly this.
-- **The final installment's split is derived from the balance that remains**,
+- **The closing installment's split is derived from the balance that remains**,
   not recomputed from the rate, so the principal portions sum to *exactly* the
   financed amount and the balance closes at zero rather than a few cents off.
+  The rounding residual is booked as interest, which keeps every payment
+  identical. A 0% promotional loan has no interest to absorb it — an interest
+  charge against a 0.00% APR is a disclosure defect, not a rounding nit — so its
+  closing payment shrinks by the residual instead.
+- **Due dates are anchored to the decision date**, not chained off each other. A
+  loan decided on the 31st is due on the 28th in February; chaining would carry
+  that clamp through the rest of the term and bill every later month early.
 
 A generated schedule, seeded and printed:
 
@@ -142,15 +149,24 @@ pairs rather than four near-identical blocks; adding a tier is one line.
 ## Test coverage
 
 100% line and branch coverage, measured by SimpleCov across all of `app/` and
-`lib/` — not just the files the suite happens to load, so untested code counts
-against the number rather than vanishing from it.
+`lib/` — not just the files the suite happens to load, so an unexercised file
+counts against the number rather than vanishing from it.
 
-The badge is enforced rather than decorative: a full `bundle exec rspec` fails if
-coverage drops below 100%, and CI runs it on every push. Running a single spec
-file skips the gate, since exercising one file is a normal thing to do while
-working and should not "fail" for not covering the rest of the app.
+Worth being precise about what that does and does not prove. The suite covers
+the service layer behaviourally; there are no model specs. Because the test
+environment eager-loads the application, the `validates` and `belongs_to` lines
+in the four models count as covered simply by having been executed at class
+definition. They are real behaviour — the `remaining_balance` check is a
+backstop against a schedule that fails to close — but inverting one would not
+fail the suite. 100% here means every *line and branch of logic* is exercised,
+not that every rule is asserted.
 
-The test environment eager-loads the application, which both keeps that
-measurement honest and verifies on every run that everything still autoloads.
+The badge is enforced rather than decorative: CI fails if coverage drops below
+100%. Local runs report coverage without gating on it, since `rspec <one_file>`,
+`rspec --only-failures` and `rspec -e "..."` are all normal things to do while
+working and none should "fail" for not covering the rest of the app.
+
+Eager loading also verifies on every run that the whole application still
+autoloads.
 
 Open `coverage/index.html` after a run for the line-by-line report.

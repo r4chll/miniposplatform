@@ -4,6 +4,14 @@
 # rule, so `rails db:seed` produces a database with a real approval, a real
 # credit denial and a real affordability denial in it rather than six happy
 # paths. Idempotent: re-running replaces the previous seed set.
+#
+# Development only, and it means it. The deletes below are unscoped, and
+# `db:prepare` runs seeds automatically on a database it considers newly
+# prepared, so an unguarded run against real data would empty all four tables.
+
+unless Rails.env.development?
+  abort "db/seeds.rb deletes every merchant, customer, application and schedule. Refusing to run in #{Rails.env}."
+end
 
 PaymentSchedule.delete_all
 LoanApplication.delete_all

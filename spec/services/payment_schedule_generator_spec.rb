@@ -20,7 +20,7 @@ RSpec.describe PaymentScheduleGenerator do
   it "produces payments whose principal portions sum to the original purchase amount" do
     generate
     total_principal = loan_application.payment_schedules.sum(:principal_amount)
-    expect(total_principal).to be_within(0.05).of(loan_application.purchase_amount)
+    expect(total_principal).to eq(loan_application.purchase_amount)
   end
 
   it "produces a consistent total monthly payment across all installments" do

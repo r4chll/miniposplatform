@@ -19,9 +19,8 @@ class LoanApprovalService
   # Deliberately conservative: a POS lender sees the purchase it is financing but
   # not the customer's other obligations, so it leaves room for them.
   #
-  # BigDecimal rather than a float literal, because the ratio it is compared
-  # against is a BigDecimal and 0.15 is not exactly representable as a float —
-  # a customer landing exactly on the threshold would otherwise be denied.
+  # BigDecimal rather than a float literal: 0.15 is not exactly representable as
+  # a float, and a customer landing exactly on the threshold must be approved.
   MAX_DEBT_TO_INCOME_RATIO = BigDecimal("0.15")
 
   # Ordered best tier first. The first tier whose threshold the customer clears
@@ -33,16 +32,24 @@ class LoanApprovalService
     { minimum_credit_score: MINIMUM_CREDIT_SCORE, rate: 18.9 }
   ].freeze
 
+  # Scale of the loan_applications.interest_rate column.
+  INTEREST_RATE_SCALE = 2
+
   def initialize(loan_application)
     @loan_application = loan_application
     @customer = loan_application.customer
   end
 
   # Returns the loan application with its decision applied.
+  #
+  # The status check happens inside the row lock rather than before it. Two
+  # workers underwriting the same application concurrently — a double-submitted
+  # checkout, or a retried job — would otherwise both read it as pending, both
+  # write a decision, and then race each other generating the schedule.
   def call
-    return loan_application unless loan_application.pending?
+    loan_application.with_lock do
+      next unless loan_application.pending?
 
-    loan_application.transaction do
       reason = denial_reason
       reason ? deny!(reason) : approve!
     end
@@ -66,12 +73,14 @@ class LoanApprovalService
     end
   end
 
-  # A customer with no income cannot support any payment, and dividing by their
-  # income to prove it would raise, so they are short-circuited here.
+  # Compared annually rather than monthly, and by multiplying rather than
+  # dividing. `annual_income / 12` is a repeating decimal for most incomes, and
+  # truncating it low pushes a payment sitting exactly on the ceiling just over
+  # it — denying the customer the constant above promises to approve. Cross
+  # multiplying keeps the comparison exact. It also handles zero income without
+  # a special case, since any positive payment exceeds a ceiling of zero.
   def unaffordable?
-    return true if customer.monthly_income <= 0
-
-    estimated_monthly_payment / customer.monthly_income > MAX_DEBT_TO_INCOME_RATIO
+    estimated_monthly_payment * 12 > customer.annual_income * MAX_DEBT_TO_INCOME_RATIO
   end
 
   def estimated_monthly_payment
@@ -82,8 +91,13 @@ class LoanApprovalService
     )
   end
 
+  # Rounded to the column's scale, so the rate this service prices with is
+  # exactly the rate that gets persisted and later read back by
+  # PaymentScheduleGenerator. Without it, a tier carrying more than two decimal
+  # places would approve a loan at one payment and schedule it at another —
+  # the disagreement Amortization exists to make impossible.
   def interest_rate
-    @interest_rate ||= tier_for(customer.credit_score).fetch(:rate)
+    @interest_rate ||= tier_for(customer.credit_score).fetch(:rate).to_d.round(INTEREST_RATE_SCALE)
   end
 
   # The lowest tier's threshold is MINIMUM_CREDIT_SCORE, so every application
@@ -118,6 +132,8 @@ class LoanApprovalService
   end
 
   def format_percentage(ratio)
-    "#{(ratio * 100).round(1)}%"
+    ActiveSupport::NumberHelper.number_to_percentage(
+      ratio * 100, precision: 1, strip_insignificant_zeros: true
+    )
   end
 end

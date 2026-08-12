@@ -13,10 +13,14 @@ SimpleCov.start "rails" do
   # The README badge quotes this suite's coverage. Failing the build when it
   # slips keeps the badge from quietly becoming a lie.
   #
-  # Only gated for a full run: `rspec spec/services/amortization_spec.rb` is a
-  # normal thing to do while working, and it should not "fail" for the entirely
-  # correct reason that it did not exercise the rest of the application.
-  minimum_coverage line: 100, branch: 100 if ARGV.none? { |arg| arg.start_with?("spec") }
+  # Gated on CI, which always runs the whole suite. Locally, `rspec <one_file>`,
+  # `rspec --only-failures` and `rspec -e "..."` are all normal things to do
+  # while working, and none of them should "fail" for the entirely correct
+  # reason that they did not exercise the rest of the application. Inspecting
+  # ARGV to tell those apart cannot work: this block runs long before RSpec has
+  # resolved which examples it will actually run.
+  # Plain Ruby, not `present?` — this runs before Rails is loaded.
+  minimum_coverage line: 100, branch: 100 unless ENV["CI"].to_s.empty?
 end
 
 RSpec.configure do |config|
