@@ -39,5 +39,5 @@ end
 
 group :test do
   # Test coverage reporting [https://github.com/simplecov-ruby/simplecov]
-  gem "simplecov", "~> 0.22.0", require: false
+  gem "simplecov", "~> 1.2.0", require: false
 end
